@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<!--HEAD-->
+<title>Bakery Project ERP</title>
+<style>
+:root{--bg:#F2F4F7;--surface:#FFFFFF;--ink:#122033;--ink-2:#44536A;--line:#C3CCD8;--accent:#1D5BA3;--accent-2:#164C8A;--accent-soft:#E1EAF6;--crit:#A22A2A;--crit-soft:#F8E0E0;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0D131B;--surface:#141C26;--ink:#E6ECF3;--ink-2:#AAB6C5;--line:#344354;--accent:#5B9BE6;--accent-2:#7AAEEB;--accent-soft:#16283D;--crit:#F28E8E;--crit-soft:#3B1A1D;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px 16px;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.card{width:min(380px,100%);background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px 24px 22px;box-shadow:0 12px 40px rgb(0 0 0 / .08)}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.brand img{width:44px;height:44px;border-radius:10px;flex:none}
+h1{font:700 22px/1.2 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;letter-spacing:-.01em}
+p{margin:0 0 16px;color:var(--ink-2);font-size:14px}
+label{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+input[type=password]{width:100%;font:600 22px/1 system-ui,sans-serif;letter-spacing:.3em;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+input[type=password]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.keep{display:flex;align-items:center;gap:8px;margin:12px 0 16px;font-weight:400;font-size:13.5px;color:var(--ink-2)}
+button{width:100%;font:600 15px/1 system-ui,sans-serif;padding:12px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+button:hover{background:var(--accent-2)} button:disabled{opacity:.6;cursor:progress}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.err{min-height:0;margin:12px 0 0;font-size:13.5px;color:var(--crit)}
+.err:empty{display:none}
+.err.on{padding:9px 12px;border-radius:6px;background:var(--crit-soft)}
+</style>
+</head>
+<body>
+<form class="card" id="f" autocomplete="off">
+  <div class="brand"><img src="icons/icon-192.png" alt=""><h1>Bakery Project ERP</h1></div>
+  <p>Enter the access code to open the ERP.</p>
+  <label for="code">Access code</label>
+  <input id="code" type="password" inputmode="numeric" autocomplete="off" required autofocus>
+  <label class="keep"><input type="checkbox" id="keep"> Remember on this device</label>
+  <button type="submit" id="go">Open</button>
+  <p class="err" id="err" role="alert"></p>
+</form>
+<script>
+/* The ERP and its records are stored encrypted (AES-GCM, key derived from the access code with PBKDF2-SHA-256); they are decrypted in the browser. */
+const P=/*PAYLOAD*/;
+const KEY='bakery-erp-access';
+const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function unlock(code){
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(code),'PBKDF2',false,['deriveKey']);
+  const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(P.salt),iterations:P.iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+  const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(P.iv)},key,b64(P.ct));
+  return await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'))).text();}
+const f=document.getElementById('f'),inp=document.getElementById('code'),err=document.getElementById('err'),go=document.getElementById('go'),keep=document.getElementById('keep');
+const say=(t,bad)=>{err.textContent=t;err.className=bad?'err on':'err';};
+async function tryCode(code,typed){go.disabled=true;go.textContent='Opening…';say('');
+  try{const html=await unlock(code);
+    if(typed){try{sessionStorage.setItem(KEY,code);if(keep.checked)localStorage.setItem(KEY,code);}catch(e){}}
+    document.open();document.write(html);document.close();}
+  catch(e){if(!typed){try{sessionStorage.removeItem(KEY);localStorage.removeItem(KEY);}catch(x){}}
+    say(e&&e.name==='OperationError'?'That code is not right. Try again.':'This browser could not open the ERP. Try an up-to-date Chrome, Edge, Safari or Firefox.',true);
+    go.disabled=false;go.textContent='Open';inp.focus();inp.select();}}
+f.addEventListener('submit',ev=>{ev.preventDefault();const c=inp.value.trim();if(c)tryCode(c,true);});
+if(!window.crypto||!crypto.subtle||typeof DecompressionStream==='undefined'){say('Open this page in an up-to-date browser over https.',true);go.disabled=true;}
+else{let c=null;try{c=sessionStorage.getItem(KEY)||localStorage.getItem(KEY);}catch(e){}if(c)tryCode(c,false);}
+</script>
+</body>
+</html>
